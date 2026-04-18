@@ -10,14 +10,15 @@ mainGui := Gui("+Resize", "DiscordRPC.ahk - All Features Test Tool")
 mainGui.SetFont("s9", "Segoe UI")
 
 ; Client ID / Secret 設定エリア
-mainGui.Add("GroupBox", "w400 h75", "Initialization")
-mainGui.Add("Text", "xp+10 yp+20", "Client ID:")
-clientIdEdit := mainGui.Add("Edit", "x+5 w150 vClientId", DotEnv.Get("CLIENT_ID", ""))
-mainGui.Add("Text", "x20 y+10", "Client Secret:")
-clientSecretEdit := mainGui.Add("Edit", "x+5 w250 vClientSecret", DotEnv.Get("CLIENT_SECRET", ""))
-btnConnect := mainGui.Add("Button", "x+10 yp-20 w80", "Connect")
+mainGui.Add("GroupBox", "Section x10 y10 w400 h90", "Initialization")
+mainGui.Add("Text", "xs+10 ys+25 w80", "Client ID:")
+clientIdEdit := mainGui.Add("Edit", "x+5 w200 vClientId", DotEnv.Get("CLIENT_ID", ""))
+btnConnect := mainGui.Add("Button", "x+10 yp-2 w80", "Connect")
 btnConnect.OnEvent("Click", (*) => OnConnect())
-btnClose := mainGui.Add("Button", "x+10 yp w80", "Close")
+
+mainGui.Add("Text", "xs+10 y+12 w80", "Client Secret:")
+clientSecretEdit := mainGui.Add("Edit", "x+5 w200 vClientSecret", DotEnv.Get("CLIENT_SECRET", ""))
+btnClose := mainGui.Add("Button", "x+10 yp-2 w80", "Close")
 btnClose.OnEvent("Click", (*) => OnClose())
 
 ; テスト機能タブ
@@ -32,51 +33,58 @@ editState := mainGui.Add("Edit", "w380 vState", "AutoHotkey v2 で開発中")
 btnUpdatePresence := mainGui.Add("Button", "w100", "Update Presence")
 btnUpdatePresence.OnEvent("Click", (*) => OnUpdatePresence())
 btnClearPresence := mainGui.Add("Button", "x+10 w100", "Clear Presence")
-btnClearPresence.OnEvent("Click", (*) => rpc.ClearActivity())
+btnClearPresence.OnEvent("Click", (*) => EnsureRPC() && rpc.ClearActivity())
 
 ; Voice タブ
 tab.UseTab(2)
-mainGui.Add("GroupBox", "w380 h80", "Toggle Controls")
-btnMute := mainGui.Add("Button", "xp+10 yp+25 w100", "Toggle Mute")
-btnMute.OnEvent("Click", (*) => rpc.ToggleMute())
+mainGui.Add("GroupBox", "Section w380 h80", "Toggle Controls")
+btnMute := mainGui.Add("Button", "xs+10 ys+25 w100", "Toggle Mute")
+btnMute.OnEvent("Click", (*) => EnsureRPC() && rpc.ToggleMute())
 btnDeaf := mainGui.Add("Button", "x+10 w100", "Toggle Deafen")
-btnDeaf.OnEvent("Click", (*) => rpc.ToggleDeaf())
+btnDeaf.OnEvent("Click", (*) => EnsureRPC() && rpc.ToggleDeaf())
 
-mainGui.Add("GroupBox", "x20 y+40 w380 h80", "Query")
+mainGui.Add("GroupBox", "xs y+20 w380 h80", "Query")
 btnGetVoice := mainGui.Add("Button", "xp+10 yp+25 w150", "Get Voice Settings")
-btnGetVoice.OnEvent("Click", (*) => rpc.GetVoiceSettings())
+btnGetVoice.OnEvent("Click", (*) => EnsureRPC() && rpc.GetVoiceSettings())
 btnGetSelChannel := mainGui.Add("Button", "x+10 w150", "Get Selected Channel")
-btnGetSelChannel.OnEvent("Click", (*) => rpc.GetSelectedVoiceChannel())
+btnGetSelChannel.OnEvent("Click", (*) => EnsureRPC() && rpc.GetSelectedVoiceChannel())
 
 ; Information タブ
 tab.UseTab(3)
-btnGetGuilds := mainGui.Add("Button", "w150", "Get Guilds")
-btnGetGuilds.OnEvent("Click", (*) => rpc.GetGuilds())
-mainGui.Add("Text", "y+10", "Guild ID:")
-editGuildId := mainGui.Add("Edit", "w150 vGuildId", "")
-btnGetChannels := mainGui.Add("Button", "x+10 w150", "Get Channels")
-btnGetChannels.OnEvent("Click", (*) => rpc.GetChannels(mainGui.Submit(false).GuildId))
+btnGetGuilds := mainGui.Add("Button", "w150 Section", "Get Guilds")
+btnGetGuilds.OnEvent("Click", (*) => EnsureRPC() && rpc.GetGuilds())
+mainGui.Add("Text", "xs y+15", "Guild ID:")
+editGuildId := mainGui.Add("Edit", "xs y+5 w150 vGuildId", "")
+btnGetChannels := mainGui.Add("Button", "x+10 yp-2 w120", "Get Channels")
+btnGetChannels.OnEvent("Click", (*) => EnsureRPC() && rpc.GetChannels(mainGui.Submit(false).GuildId))
 
-mainGui.Add("Text", "x20 y+20", "User ID (Blank for Self):")
-editUserId := mainGui.Add("Edit", "w200 vUserId", "")
-btnGetUser := mainGui.Add("Button", "x+5 w100", "Get User")
-btnGetUser.OnEvent("Click", (*) => rpc.GetUser(mainGui.Submit(false).UserId))
+mainGui.Add("Text", "xs y+15", "User ID (Blank for Self):")
+editUserId := mainGui.Add("Edit", "xs y+5 w150 vUserId", "")
+btnGetUser := mainGui.Add("Button", "x+10 yp-2 w100", "Get User")
+btnGetUser.OnEvent("Click", (*) => (
+    targetId := mainGui.Submit(false).UserId,
+    (!targetId && rpc is DiscordRPC && rpc.HasProp("user")) ? targetId := rpc.user.id : "",
+    EnsureRPC() && rpc.GetUser(targetId)
+))
 
 ; Advanced タブ
 tab.UseTab(4)
-mainGui.Add("Text", "", "Scopes (space separated):")
-editScopes := mainGui.Add("Edit", "w300 vScopes", "rpc rpc.activities.write")
-btnAuthorize := mainGui.Add("Button", "w100", "Authorize")
+mainGui.Add("Text", "Section", "Scopes (space separated):")
+editScopes := mainGui.Add("Edit", "w250 vScopes", DotEnv.Get("SCOPES", "rpc rpc.activities.write"))
+btnAuthorize := mainGui.Add("Button", "x+10 yp-2 w100", "Authorize")
 btnAuthorize.OnEvent("Click", (*) => OnAuthorize())
 
-mainGui.Add("Text", "y+10", "Access Token:")
-editToken := mainGui.Add("Edit", "w300 vAccessToken", DotEnv.Get("ACCESS_TOKEN", ""))
-btnAuthenticate := mainGui.Add("Button", "w100", "Authenticate")
+mainGui.Add("Text", "xs y+10", "Access Token:")
+editToken := mainGui.Add("Edit", "w250 vAccessToken", DotEnv.Get("ACCESS_TOKEN", ""))
+btnAuthenticate := mainGui.Add("Button", "x+10 yp-2 w100", "Authenticate")
 btnAuthenticate.OnEvent("Click", (*) => OnAuthenticate())
 
-mainGui.Add("Text", "y+10", "Invite Dialog Test:")
+mainGui.Add("Text", "xs y+10", "Invite Dialog Test:")
 btnInvite := mainGui.Add("Button", "w150", "Open Invite Dialog")
-btnInvite.OnEvent("Click", (*) => rpc.OpenInviteDialog())
+btnInvite.OnEvent("Click", (*) => (
+    !currentVoiceChannelId ? MsgBox("音声チャンネルが選択されていません。Voice タブの Get Selected Channel ボタンを先に押してください。", "Error", 16) :
+    EnsureRPC() && rpc.OpenInviteDialog(currentVoiceChannelId)
+))
 
 tab.UseTab() ; タブ外
 
@@ -84,11 +92,22 @@ tab.UseTab() ; タブ外
 mainGui.Add("Text", "x10 y+10", "Incoming Logs / JSON Response:")
 logArea := mainGui.Add("Edit", "x10 y+5 w400 h200 ReadOnly Multi vLogArea")
 
-mainGui.OnEvent("Close", (*) => (rpc.Close(), ExitApp()))
+mainGui.OnEvent("Close", (*) => (EnsureRPC() && rpc.Close(), ExitApp()))
 mainGui.Show()
+
+    AppendLog("Initialization complete.")
 
 ; RPC 初期化（後延し）
 global rpc := 0
+global currentVoiceChannelId := ""
+
+EnsureRPC() {
+    global rpc
+    if (rpc is DiscordRPC)
+        return true
+    MsgBox("Discord に接続されていません。Initialization セクションの Connect ボタンを押してください。", "Error", 16)
+    return false
+}
 
 AppendLog(msg) {
     logArea.Value .= FormatTime(, "HH:mm:ss") . " - " . msg . "`n"
@@ -98,10 +117,16 @@ AppendLog(msg) {
 OnConnect() {
     global rpc
     formData := mainGui.Submit(false)
+    
+    ; 設定を保存
+    DotEnv.Write("CLIENT_ID", formData.ClientId)
+    DotEnv.Write("CLIENT_SECRET", formData.ClientSecret)
+    
     rpc := DiscordRPC(formData.ClientId)
     
     ; イベントリスナーの登録
     rpc.On("READY", (data) => (
+        rpc.user := data.user,
         AppendLog("CONNECTED: " . data.user.username . "#" . data.user.discriminator),
         ToolTip("Discord Connected!"),
         SetTimer(() => ToolTip(), -2000)
@@ -111,9 +136,15 @@ OnConnect() {
     rpc.On("DISCONNECTED", (msg) => AppendLog("DISCONNECTED: " . msg))
     
     ; 汎用レスポンスリスナー（全コマンドの結果をログに表示）
+    OnGetResponse(name, data) {
+        global currentVoiceChannelId
+        if (name = "GET_SELECTED_VOICE_CHANNEL")
+            currentVoiceChannelId := data.HasProp("id") ? data.id : ""
+        AppendLog(name . ": " . JSON.Stringify(data))
+    }
+
     for eventName in ["GET_VOICE_SETTINGS", "GET_SELECTED_VOICE_CHANNEL", "GET_GUILDS", "GET_CHANNELS", "GET_USER", "AUTHORIZE", "AUTHENTICATE"] {
-        ; 無名関数を使って現在の eventName を束縛する
-        ((name) => rpc.On(name, (data) => AppendLog(name . ": " . JSON.Stringify(data))))(eventName)
+        rpc.On(eventName, OnGetResponse.Bind(eventName))
     }
 
     if (rpc.Connect()) {
@@ -137,8 +168,7 @@ OnClose() {
 }
 
 OnUpdatePresence() {
-    if (!rpc) {
-        MsgBox("接続が確立されていない。")
+    if (!EnsureRPC()) {
         return
     }
     formData := mainGui.Submit(false)
@@ -158,7 +188,14 @@ OnUpdatePresence() {
 }
 
 OnAuthorize() {
+    if (!EnsureRPC()) {
+        return
+    }
     formData := mainGui.Submit(false)
+    
+    ; Scopes を保存
+    DotEnv.Write("SCOPES", formData.Scopes)
+    
     scopes := StrSplit(formData.Scopes, " ")
     
     ; AUTHORIZE レスポンスハンドラを一回限りで登録
@@ -185,6 +222,9 @@ OnExchangeCode(code) {
 }
 
 OnAuthenticate(token := "") {
+    if (!EnsureRPC()) {
+        return
+    }
     if (!token) {
         formData := mainGui.Submit(false)
         token := formData.AccessToken
@@ -197,6 +237,7 @@ OnAuthenticate(token := "") {
 
     ; AUTHENTICATE 成功時にトークンを保存
     rpc.On("AUTHENTICATE", (data) => (
+        rpc.user := data.user,
         AppendLog("Authenticated as: " . data.user.username),
         DotEnv.Write("ACCESS_TOKEN", token),
         AppendLog("Access token saved to .env")

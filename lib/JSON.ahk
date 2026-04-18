@@ -5,6 +5,7 @@
 class JSON {
     static True := {__json_type: "boolean", value: true}
     static False := {__json_type: "boolean", value: false}
+    static Null := {__json_type: "null"}
 
     static Parse(json) {
         p := 1
@@ -12,8 +13,12 @@ class JSON {
     }
 
     static Stringify(obj) {
-        if (IsObject(obj) && obj.HasProp("__json_type") && obj.__json_type == "boolean")
-            return obj.value ? "true" : "false"
+        if (IsObject(obj) && obj.HasProp("__json_type")) {
+            if (obj.__json_type == "boolean")
+                return obj.value ? "true" : "false"
+            if (obj.__json_type == "null")
+                return "null"
+        }
 
         if obj is Array {
             res := "["
@@ -99,7 +104,7 @@ class JSON {
     }
 
     static _ParseString(json, &p) {
-        if !RegExMatch(json, '\G"((?:[^"\\\\]|\\\\.)*)"', &m, p)
+        if !RegExMatch(json, '\G"((?:[^"\\]|\\.)*)"', &m, p)
             throw Error("Invalid string at position " . p)
         p += m.Len
         str := m[1]

@@ -13,6 +13,7 @@ class DiscordRPC {
     hPipe := 0
     clientId := ""
     callbacks := Map()
+    pendingRequests := Map()
     buffer := Buffer(0)
     logFile := A_ScriptDir . "\discord_rpc.log"
 
@@ -74,15 +75,20 @@ class DiscordRPC {
      * @param {Object} args 引数
      * @param {String} evt イベント名（SUBSCRIBE/UNSUBSCRIBE用）
      */
-    Request(cmd, args := {}, evt := "") {
+    Request(cmd, args := {}, evt := "", callback := 0) {
+        nonce := this._CreateGuid()
         data := {
             cmd: cmd,
-            nonce: this._CreateGuid()
+            nonce: nonce
         }
         if (args)
             data.args := args
         if (evt)
             data.evt := evt
+        
+        if (callback)
+            this.pendingRequests[nonce] := callback
+
         return this._Send(DiscordRPC.OP_FRAME, JSON.Stringify(data))
     }
 
@@ -97,7 +103,7 @@ class DiscordRPC {
     ; --- Rich Presence & Activities ---
 
     SetActivity(details) => this.Request("SET_ACTIVITY", {pid: DllCall("GetCurrentProcessId"), activity: details})
-    ClearActivity() => this.Request("SET_ACTIVITY", {pid: DllCall("GetCurrentProcessId"), activity: Map()})
+    ClearActivity() => this.Request("SET_ACTIVITY", {pid: DllCall("GetCurrentProcessId"), activity: JSON.Null})
     SendActivityJoinInvite(userId) => this.Request("SEND_ACTIVITY_JOIN_INVITE", {user_id: userId})
     CloseActivityRequest(userId) => this.Request("CLOSE_ACTIVITY_REQUEST", {user_id: userId})
     AcceptActivityInvite(userId, type, sessionId, channelId := "") => this.Request("ACCEPT_ACTIVITY_INVITE", {user_id: userId, type: type, session_id: sessionId, channel_id: channelId})
@@ -116,9 +122,9 @@ class DiscordRPC {
     SetMute(mute := true) => this.Request("SET_VOICE_SETTINGS", {mute: mute ? JSON.True : JSON.False})
     SetDeaf(deaf := true) => this.Request("SET_VOICE_SETTINGS", {deaf: deaf ? JSON.True : JSON.False})
     
-    ; 注意: GET_VOICE_SETTINGS の既存のリスナーを上書きする
-    ToggleMute() => (this.On("GET_VOICE_SETTINGS", (data) => this.SetMute(!data.mute)), this.GetVoiceSettings())
-    ToggleDeaf() => (this.On("GET_VOICE_SETTINGS", (data) => this.SetDeaf(!data.deaf)), this.GetVoiceSettings())
+    ; 注意: GET_VOICE_SETTINGS の既存のリスナーを上書きしない
+    ToggleMute() => this.Request("GET_VOICE_SETTINGS", , , (data) => this.SetMute(!data.mute))
+    ToggleDeaf() => this.Request("GET_VOICE_SETTINGS", , , (data) => this.SetDeaf(!data.deaf))
 
     /**
      * OAuth2 認可コードをアクセストークンに交換する
@@ -160,7 +166,7 @@ class DiscordRPC {
 
     ; --- User & Relationships ---
 
-    GetUser(userId) => this.Request("GET_USER", {user_id: userId})
+    GetUser(userId) => this.Request("GET_USER", {id: userId})
     GetRelationships() => this.Request("GET_RELATIONSHIPS")
 
     ; --- Hardware & Client Control ---
@@ -168,7 +174,7 @@ class DiscordRPC {
     SetCertifiedDevices(devices) => this.Request("SET_CERTIFIED_DEVICES", {devices: devices})
     CaptureShortcut(action) => this.Request("CAPTURE_SHORTCUT", {action: action})
     OverlaySetLocked(locked) => this.Request("OVERLAY_SET_LOCKED", {locked: locked})
-    OpenInviteDialog() => this.Request("OPEN_INVITE_DIALOG")
+    OpenInviteDialog(channelId) => this.Request("OPEN_INVITE_DIALOG", {channel_id: channelId})
     DeepLink(params) => this.Request("DEEP_LINK", params)
     BrowserHandoff() => this.Request("BROWSER_HANDOFF")
     GiftCodeBrowser(code) => this.Request("GIFT_CODE_BROWSER", {code: code})
@@ -267,6 +273,13 @@ class DiscordRPC {
             this.Log("Raw Payload: " . payload)
             data := JSON.Parse(payload)
             if (op = DiscordRPC.OP_FRAME) {
+                ; Nonce ベースの特定のリクエストに対するコールバックを処理
+                if (data.HasProp("nonce") && data.nonce && this.pendingRequests.Has(data.nonce)) {
+                    callback := this.pendingRequests[data.nonce]
+                    this.pendingRequests.Delete(data.nonce)
+                    callback(data.HasProp("data") ? data.data : data)
+                }
+
                 target := ""
                 if (data.HasProp("evt") && data.evt) {
                     target := data.evt

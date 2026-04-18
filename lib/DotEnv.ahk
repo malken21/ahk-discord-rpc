@@ -9,11 +9,12 @@ class DotEnv {
      * @returns {Boolean} ファイルが存在し読み込みに成功した場合は true
      */
     static Load(path := ".env") {
-        if !FileExist(path)
+        resolvedPath := this._GetPath(path)
+        if !FileExist(resolvedPath)
             return false
         
         try {
-            content := FileRead(path, "UTF-8")
+            content := FileRead(resolvedPath, "UTF-8")
             for line in StrSplit(content, "`n", "`r") {
                 line := Trim(line)
                 ; 空行またはコメントをスキップ
@@ -62,15 +63,21 @@ class DotEnv {
     static Write(key, value, path := ".env") {
         EnvSet(key, value)
         
-        content := ""
-        if FileExist(path)
-            content := FileRead(path, "UTF-8")
+        resolvedPath := this._GetPath(path)
+        try {
+            content := ""
+            if FileExist(resolvedPath)
+                content := FileRead(resolvedPath, "UTF-8")
         
         lines := StrSplit(content, "`n", "`r")
         found := false
         newLines := []
         
         for line in lines {
+            line := Trim(line)
+            if (line == "")
+                continue
+            
             if RegExMatch(line, "^" . key . "=", &m) {
                 newLines.Push(key . '="' . value . '"')
                 found := true
@@ -80,8 +87,6 @@ class DotEnv {
         }
         
         if (!found) {
-            if (newLines.Length > 0 && newLines[newLines.Length] != "")
-                newLines.Push("")
             newLines.Push(key . '="' . value . '"')
         }
         
@@ -90,8 +95,24 @@ class DotEnv {
             out .= line . "`r`n"
         }
         
-        f := FileOpen(path, "w", "UTF-8")
-        f.Write(Trim(out, "`r`n") . "`r`n")
-        f.Close()
+            f := FileOpen(resolvedPath, "w", "UTF-8")
+            f.Write(out)
+            f.Close()
+            return true
+        } catch as e {
+            OutputDebug("DotEnv Write Error: " . e.Message)
+            return false
+        }
+    }
+
+    /**
+     * 相対パスを A_ScriptDir を起点とした絶対パスに変換する
+     * @param {String} path 
+     * @returns {String} 
+     */
+    static _GetPath(path) {
+        if (RegExMatch(path, "^[a-zA-Z]:") || SubStr(path, 1, 2) == "\\")
+            return path
+        return A_ScriptDir . "\" . path
     }
 }
