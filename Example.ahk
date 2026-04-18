@@ -18,8 +18,8 @@ btnConnect.OnEvent("Click", (*) => OnConnect())
 
 mainGui.Add("Text", "xs+10 y+12 w80", "Client Secret:")
 clientSecretEdit := mainGui.Add("Edit", "x+5 w200 vClientSecret", DotEnv.Get("CLIENT_SECRET", ""))
-btnClose := mainGui.Add("Button", "x+10 yp-2 w80", "Close")
-btnClose.OnEvent("Click", (*) => OnClose())
+btnClose := mainGui.Add("Button", "x+10 yp-2 w80", "Disconnect")
+btnClose.OnEvent("Click", (*) => OnDisconnect())
 
 ; テスト機能タブ
 tab := mainGui.Add("Tab3", "x10 y+20 w400 h300", ["Presence", "Voice", "Information", "Advanced"])
@@ -79,11 +79,28 @@ editToken := mainGui.Add("Edit", "w250 vAccessToken", DotEnv.Get("ACCESS_TOKEN",
 btnAuthenticate := mainGui.Add("Button", "x+10 yp-2 w100", "Authenticate")
 btnAuthenticate.OnEvent("Click", (*) => OnAuthenticate())
 
-mainGui.Add("Text", "xs y+10", "Invite Dialog Test:")
+mainGui.Add("Text", "xs y+10", "Invite & Utility Test:")
+mainGui.Add("Text", "xs y+5", "Channel ID (Optional for Dialog):")
+editTestChannelId := mainGui.Add("Edit", "w250 vTestChannelId", "")
+mainGui.Add("Text", "xs y+5 cGray", "※OpenInviteDialog は Activity 以外では動作しない場合があります。")
+
 btnInvite := mainGui.Add("Button", "w150", "Open Invite Dialog")
 btnInvite.OnEvent("Click", (*) => (
-    !currentVoiceChannelId ? MsgBox("音声チャンネルが選択されていません。Voice タブの Get Selected Channel ボタンを先に押してください。", "Error", 16) :
-    EnsureRPC() && rpc.OpenInviteDialog(currentVoiceChannelId)
+    targetId := mainGui.Submit(false).TestChannelId,
+    EnsureRPC() && rpc.OpenInviteDialog(targetId)
+))
+
+btnCreateInvite := mainGui.Add("Button", "x+10 w150", "Create Invite Code")
+btnCreateInvite.OnEvent("Click", (*) => (
+    targetId := mainGui.Submit(false).TestChannelId,
+    !targetId ? MsgBox("Channel ID を入力してください。", "Error", 16) :
+    EnsureRPC() && rpc.CreateChannelInvite(targetId, , , , , (data) => (
+        data.HasProp("code") ? (
+            inviteUrl := "https://discord.gg/" . data.code,
+            A_Clipboard := inviteUrl,
+            MsgBox("招待コードが作成されました: " . data.code . "`nURL をクリップボードにコピーしました:`n" . inviteUrl, "Success", 64)
+        ) : MsgBox("招待の作成に失敗しました。ログを確認してください。", "Error", 16)
+    ))
 ))
 
 tab.UseTab() ; タブ外
@@ -92,7 +109,7 @@ tab.UseTab() ; タブ外
 mainGui.Add("Text", "x10 y+10", "Incoming Logs / JSON Response:")
 logArea := mainGui.Add("Edit", "x10 y+5 w400 h200 ReadOnly Multi vLogArea")
 
-mainGui.OnEvent("Close", (*) => (EnsureRPC() && rpc.Close(), ExitApp()))
+mainGui.OnEvent("Close", (*) => ((rpc is DiscordRPC) && rpc.Close(), ExitApp()))
 mainGui.Show()
 
     AppendLog("Initialization complete.")
@@ -143,7 +160,7 @@ OnConnect() {
         AppendLog(name . ": " . JSON.Stringify(data))
     }
 
-    for eventName in ["GET_VOICE_SETTINGS", "GET_SELECTED_VOICE_CHANNEL", "GET_GUILDS", "GET_CHANNELS", "GET_USER", "AUTHORIZE", "AUTHENTICATE"] {
+    for eventName in ["GET_VOICE_SETTINGS", "GET_SELECTED_VOICE_CHANNEL", "GET_GUILDS", "GET_CHANNELS", "GET_USER", "AUTHORIZE", "AUTHENTICATE", "OPEN_INVITE_DIALOG", "CREATE_CHANNEL_INVITE"] {
         rpc.On(eventName, OnGetResponse.Bind(eventName))
     }
 
@@ -160,8 +177,8 @@ OnConnect() {
     }
 }
 
-OnClose() {
-    if (rpc) {
+OnDisconnect() {
+    if (rpc is DiscordRPC) {
         rpc.Close()
         AppendLog("Connection closed.")
     }
