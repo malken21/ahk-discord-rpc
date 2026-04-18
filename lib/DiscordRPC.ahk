@@ -2,6 +2,8 @@
  * DiscordRPC.ahk
  * Discord Rich Presence Library for AutoHotkey v2
  */
+#Include JSON.ahk
+
 class DiscordRPC {
     static PIPE_NAME := "\\.\pipe\discord-ipc-0"
     static OP_HANDSHAKE := 0
@@ -12,9 +14,18 @@ class DiscordRPC {
     clientId := ""
     callbacks := Map()
     buffer := Buffer(0)
+    logFile := A_ScriptDir . "\discord_rpc.log"
 
     __New(clientId) {
         this.clientId := clientId
+    }
+
+    /**
+     * 現在の Unix タイムスタンプを取得 (UTC)
+     * @returns {Integer} Unix タイムスタンプ
+     */
+    static GetUnixTime() {
+        return DateDiff(A_NowUTC, "19700101", "Seconds")
     }
 
     /**
@@ -28,7 +39,7 @@ class DiscordRPC {
         loop 10 {
             pipeName := "\\.\pipe\discord-ipc-" . (A_Index - 1)
             this.hPipe := DllCall("CreateFile", "Str", pipeName, "UInt", 0xC0000000, "UInt", 0, "Ptr", 0, "UInt", 3, "UInt", 0, "Ptr", 0, "Ptr")
-            if (this.hPipe != -1)
+            if (this.hPipe != -1 && this.hPipe != 0)
                 break
             this.hPipe := 0
         }
@@ -54,7 +65,7 @@ class DiscordRPC {
      * @param {Function} callback コールバック関数
      */
     On(event, callback) {
-        this.callbacks[Upper(event)] := callback
+        this.callbacks[StrUpper(event)] := callback
     }
 
     /**
@@ -72,12 +83,15 @@ class DiscordRPC {
             data.args := args
         if (evt)
             data.evt := evt
-        return this._Send(DiscordRPC.OP_FRAME, this._ToJson(data))
+        return this._Send(DiscordRPC.OP_FRAME, JSON.Stringify(data))
     }
 
     ; --- Authentication & Authorization ---
 
-    Authorize(scopes, client_id := "") => this.Request("AUTHORIZE", {scopes: scopes, client_id: client_id || this.clientId})
+    Authorize(scopes, client_id := "") {
+        id := String(client_id || this.clientId)
+        return this.Request("AUTHORIZE", {scopes: scopes, client_id: id})
+    }
     Authenticate(access_token) => this.Request("AUTHENTICATE", {access_token: access_token})
 
     ; --- Rich Presence & Activities ---
@@ -99,10 +113,41 @@ class DiscordRPC {
 
     ; --- Voice Control Helpers ---
 
-    SetMute(mute := true) => this.SetVoiceSettings({mute: mute})
-    SetDeaf(deaf := true) => this.SetVoiceSettings({deaf: deaf})
+    SetMute(mute := true) => this.Request("SET_VOICE_SETTINGS", {mute: mute ? JSON.True : JSON.False})
+    SetDeaf(deaf := true) => this.Request("SET_VOICE_SETTINGS", {deaf: deaf ? JSON.True : JSON.False})
+    
+    ; 注意: GET_VOICE_SETTINGS の既存のリスナーを上書きする
     ToggleMute() => (this.On("GET_VOICE_SETTINGS", (data) => this.SetMute(!data.mute)), this.GetVoiceSettings())
     ToggleDeaf() => (this.On("GET_VOICE_SETTINGS", (data) => this.SetDeaf(!data.deaf)), this.GetVoiceSettings())
+
+    /**
+     * OAuth2 認可コードをアクセストークンに交換する
+     * @param {String} code 認可コード
+     * @param {String} client_secret クライアントシークレット
+     * @returns {Object} JSON レスポンス (access_token 等を含む)
+     */
+    ExchangeCodeForToken(code, client_secret) {
+        try {
+            whr := ComObject("WinHttp.WinHttpRequest.5.1")
+            whr.Open("POST", "https://discord.com/api/oauth2/token", false)
+            whr.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded")
+            
+            body := "client_id=" . this.clientId 
+                  . "&client_secret=" . client_secret 
+                  . "&grant_type=authorization_code"
+                  . "&code=" . code
+            
+            whr.Send(body)
+            this.Log("Token Response: " . whr.ResponseText)
+            if (whr.Status != 200)
+                throw Error("Token exchange failed: " . whr.ResponseText)
+            
+            return JSON.Parse(whr.ResponseText)
+        } catch as e {
+            this.Log("Exchange Error: " . e.Message)
+            return {error: e.Message}
+        }
+    }
 
     ; --- Guild & Channel Information ---
 
@@ -145,7 +190,7 @@ class DiscordRPC {
         if !(events is Array)
             events := [events]
         for event in events {
-            this.Request("SUBSCRIBE", {}, Upper(event))
+            this.Request("SUBSCRIBE", {}, StrUpper(event))
         }
     }
 
@@ -153,7 +198,7 @@ class DiscordRPC {
         if !(events is Array)
             events := [events]
         for event in events {
-            this.Request("UNSUBSCRIBE", {}, Upper(event))
+            this.Request("UNSUBSCRIBE", {}, StrUpper(event))
         }
     }
 
@@ -219,24 +264,45 @@ class DiscordRPC {
 
     _Dispatch(op, payload) {
         try {
-            data := this._FromJson(payload)
+            this.Log("Raw Payload: " . payload)
+            data := JSON.Parse(payload)
             if (op = DiscordRPC.OP_FRAME) {
+                target := ""
                 if (data.HasProp("evt") && data.evt) {
-                    evt := Upper(data.evt)
+                    target := data.evt
+                } else if (data.HasProp("cmd") && data.cmd) {
+                    target := data.cmd
+                } else if (data.HasProp("code")) {
+                    ; トップレベルのエラー (Invalid Client ID 等)
+                    target := "ERROR"
+                }
+
+                if (target) {
+                    evt := StrUpper(target)
+                    this.Log("Dispatch: " . evt)
                     if (this.callbacks.Has(evt)) {
-                        this.callbacks[evt](data.data)
+                        ; data.data がない場合は data 自体を渡す
+                        this.callbacks[evt](data.HasProp("data") ? data.data : data)
                     }
                 }
             }
         } catch as e {
-            ; JSON パース失敗等は無視するか、内部エラーイベントを投げる
+            this.Log("Dispatch Error: " . e.Message . "`nPayload: " . payload)
         }
+    }
+
+    Log(msg) {
+        try {
+            FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") . " - " . msg . "`n", this.logFile, "UTF-8")
+        }
+        OutputDebug("DiscordRPC: " . msg)
     }
 
     _Send(op, payload) {
         if (!this.hPipe)
             return false
 
+        this.Log("Sending Payload: " . payload)
         payloadBuf := Buffer(StrPut(payload, "UTF-8") - 1)
         StrPut(payload, payloadBuf, "UTF-8")
         
@@ -244,11 +310,17 @@ class DiscordRPC {
         NumPut("UInt", op, header, 0)
         NumPut("UInt", payloadBuf.Size, header, 4)
 
-        if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", header, "UInt", 8, "Ptr", 0, "Ptr", 0))
+        ; 同期通信の場合、lpNumberOfBytesWritten (第4引数) は必須
+        written := 0
+        if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", header, "UInt", 8, "UInt*", &written, "Ptr", 0)) {
+            this.Log("WriteFile (Header) failed. Error: " . A_LastError)
             return false
+        }
         
-        if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", payloadBuf, "UInt", payloadBuf.Size, "Ptr", 0, "Ptr", 0))
+        if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", payloadBuf, "UInt", payloadBuf.Size, "UInt*", &written, "Ptr", 0)) {
+            this.Log("WriteFile (Payload) failed. Error: " . A_LastError)
             return false
+        }
         
         return true
     }
@@ -260,75 +332,5 @@ class DiscordRPC {
         s := StrGet(ptr)
         DllCall("rpcrt4\RpcStringFree", "Ptr*", &ptr)
         return s
-    }
-
-    /**
-     * JSON エンコーダー（Map/Object/Array 対応）
-     */
-    _ToJson(obj) {
-        if IsObject(obj) {
-            if (obj is Array) {
-                res := "["
-                for i, v in obj {
-                    res .= (i = 1 ? "" : ",") . this._ToJson(v)
-                }
-                return res . "]"
-            }
-            res := "{"
-            first := true
-            if (obj is Map) {
-                for k, v in obj {
-                    res .= (first ? "" : ",") . '"' . k . '":' . this._ToJson(v)
-                    first := false
-                }
-            } else {
-                for k, v in obj.OwnProps() {
-                    res .= (first ? "" : ",") . '"' . k . '":' . this._ToJson(v)
-                    first := false
-                }
-            }
-            return res . "{" == res ? "{}" : res . "}"
-        } else if IsNumber(obj) {
-            return obj
-        } else if (obj == "null") {
-            return "null"
-        } else {
-            return '"' . StrReplace(StrReplace(StrReplace(obj, "\", "\\"), '"', '\"'), "`n", "\n") . '"'
-        }
-    }
-
-    /**
-     * 簡易 JSON デコーダー
-     */
-    _FromJson(json) {
-        ; AHK v2 には標準の JSON デコーダーがないため、簡易的な実装を行うか、
-        ; 他のスクリプトから引用する。ここでは軽量な実装を行う。
-        static htmlfile := ComObject("htmlfile")
-        htmlfile.write('<script>Object.prototype.toJSON = function() { return JSON.stringify(this); };</script>')
-        return this._JsToAhk(htmlfile.parentWindow.JSON.parse(json))
-    }
-
-    _JsToAhk(jsObj) {
-        if !IsObject(jsObj)
-            return jsObj
-        
-        try {
-            if (jsObj.length != "") {
-                ; 配列の場合
-                ahkArr := []
-                loop jsObj.length
-                    ahkArr.Push(this._JsToAhk(jsObj.%A_Index-1%))
-                return ahkArr
-            }
-        } catch {
-            ; length プロパティがない場合はオブジェクトとして処理
-        }
-
-        ; オブジェクトの場合
-        ahkObj := {}
-        for prop in jsObj {
-            ahkObj.%prop% := this._JsToAhk(jsObj.%prop%)
-        }
-        return ahkObj
     }
 }
