@@ -15,7 +15,6 @@ class DiscordRPC {
     callbacks := Map()
     pendingRequests := Map()
     buffer := Buffer(0)
-    logFile := A_ScriptDir . "\discord_rpc.log"
 
     __New(clientId) {
         this.clientId := clientId
@@ -144,13 +143,11 @@ class DiscordRPC {
                   . "&code=" . code
             
             whr.Send(body)
-            this.Log("Token Response: " . whr.ResponseText)
             if (whr.Status != 200)
                 throw Error("Token exchange failed: " . whr.ResponseText)
             
             return JSON.Parse(whr.ResponseText)
         } catch as e {
-            this.Log("Exchange Error: " . e.Message)
             return {error: e.Message}
         }
     }
@@ -270,7 +267,6 @@ class DiscordRPC {
 
     _Dispatch(op, payload) {
         try {
-            this.Log("Raw Payload: " . payload)
             data := JSON.Parse(payload)
             if (op = DiscordRPC.OP_FRAME) {
                 ; Nonce ベースの特定のリクエストに対するコールバックを処理
@@ -292,7 +288,6 @@ class DiscordRPC {
 
                 if (target) {
                     evt := StrUpper(target)
-                    this.Log("Dispatch: " . evt)
                     if (this.callbacks.Has(evt)) {
                         ; data.data がない場合は data 自体を渡す
                         this.callbacks[evt](data.HasProp("data") ? data.data : data)
@@ -300,22 +295,13 @@ class DiscordRPC {
                 }
             }
         } catch as e {
-            this.Log("Dispatch Error: " . e.Message . "`nPayload: " . payload)
+            ; Dispatch error
         }
-    }
-
-    Log(msg) {
-        try {
-            FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") . " - " . msg . "`n", this.logFile, "UTF-8")
-        }
-        OutputDebug("DiscordRPC: " . msg)
     }
 
     _Send(op, payload) {
         if (!this.hPipe)
             return false
-
-        this.Log("Sending Payload: " . payload)
         payloadBuf := Buffer(StrPut(payload, "UTF-8") - 1)
         StrPut(payload, payloadBuf, "UTF-8")
         
@@ -326,12 +312,10 @@ class DiscordRPC {
         ; 同期通信の場合、lpNumberOfBytesWritten (第4引数) は必須
         written := 0
         if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", header, "UInt", 8, "UInt*", &written, "Ptr", 0)) {
-            this.Log("WriteFile (Header) failed. Error: " . A_LastError)
             return false
         }
         
         if (!DllCall("WriteFile", "Ptr", this.hPipe, "Ptr", payloadBuf, "UInt", payloadBuf.Size, "UInt*", &written, "Ptr", 0)) {
-            this.Log("WriteFile (Payload) failed. Error: " . A_LastError)
             return false
         }
         
