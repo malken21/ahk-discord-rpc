@@ -1,54 +1,71 @@
 # Discord RPC for AutoHotkey v2
 
-AutoHotkey (v2.0+) を使用して、外部 DLL に依存せずに Discord Rich Presence を実現する軽量ライブラリ。
+AutoHotkey (v2.0+) を使用して、外部 DLL に依存せずに Discord Rich Presence を実現する軽量かつ高機能なライブラリです。
 
 ## 特徴
-- **外部 DLL 不要**: Windows 標準の Named Pipe を使用して Discord と直接通信。
-- **AutoHotkey v2 専用**: 最新の AHK v2 構文向けに最適化。
-- **純粋 AHK 実装**: `htmlfile` (Internet Explorer) に依存しない、最新の 高精度 JSON 解析エンジン (`JSON.ahk`) を搭載。
 
-## 使用方法
+- **純粋な AHK 実装**: 外部の DLL やモジュールを必要とせず、AHK スクリプトのみで動作します。
+- **IPC 通信**: Discord クライアントと直接 IPC (Named Pipe) で通信します。
+- **フル機能対応**: Presence の更新だけでなく、ボイス設定やギルド・チャンネル情報の取得、OAuth2 連携まで幅広くサポートしています。
+- **非同期処理**: イベント駆動型の設計により、メインスレッドをブロックせずに処理を行います。
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) で Application ID を取得する。
-2. `lib` フォルダ内の `DiscordRPC.ahk` および `JSON.ahk` をプロジェクトの `lib` フォルダ（またはライブラリフォルダ）に配置する。
-3. 以下のコードで Rich Presence を更新する。
+## インストール
+
+`lib/` ディレクトリの内容を自身のプロジェクトにコピーして使用してください。
+
+- `lib/DiscordRPC.ahk`: メインライブラリ
+- `lib/JSON.ahk`: JSON 処理ライブラリ（必須）
+- `lib/DotEnv.ahk`: 環境変数読み込み（任意、`Example.ahk` で使用）
+
+## 使い方
+
+### 基本的な Presence 更新
 
 ```autohotkey
+#Requires AutoHotkey v2.0
 #Include lib/DiscordRPC.ahk
 
+; Client ID を指定して初期化
 rpc := DiscordRPC("YOUR_CLIENT_ID")
+
+; READY イベントを待機（任意）
+rpc.On("READY", (data) => MsgBox("Connected as " . data.user.username))
+
+; 接続開始
 if (rpc.Connect()) {
+    ; Presence を設定
     rpc.SetActivity({
-        state: "ステータス文字",
-        details: "詳細情報",
+        details: "テスト中",
+        state: "AHK v2 を使用",
         assets: {
-            large_image: "image_key"
+            large_image: "image_name",
+            large_text: "Tooltip text"
         }
     })
 }
 ```
 
-## API リファレンス
+## 利用可能な機能 (主要メソッド)
 
-### 接続・基本操作
-- `Connect()`: Discord デスクトップクライアントへの接続を開始。
-- `Close()`: 接続を終了。
-- `On(event, callback)`: イベントリスナーを登録 (`READY`, `DISCONNECTED`, `ERROR` 等)。
+### Presence & Activity
+- `SetActivity(details)`: Rich Presence を更新します。
+- `ClearActivity()`: Presence を削除します。
 
-### リッチプレゼンス
-- `SetActivity(details)`: Rich Presence を更新。オブジェクト形式でパラメータを渡します。
-- `ClearActivity()`: Rich Presence を消去。
+### Voice Control
+- `GetVoiceSettings()`: 現在のボイス設定（ミュート、スピーカーミュート等）を取得します。
+- `SetMute(mute)`, `SetDeaf(deaf)`: ミュート状態を切り替えます。
+- `ToggleMute()`, `ToggleDeaf()`: 現在の状態を反転させます。
 
-### ボイス制御 (要認証/スコープ設定)
-- `SetMute(bool)`: マイクのミュート状態を設定。
-- `SetDeaf(bool)`: スピーカーのミュート状態を設定。
-- `ToggleMute()`: マイクのミュート状態を反転。
-- `ToggleDeaf()`: スピーカーのミュート状態を反転。
+### Information
+- `GetGuilds()`, `GetChannels(guildId)`: サーバーやチャンネルの情報を取得します。
+- `GetUser(userId)`: ユーザー情報を取得します。
 
-## 高度なサンプル
-ボイスチャットの制御やボタン付きプレゼンスの詳細は [AdvancedExample.ahk](AdvancedExample.ahk) を参照してください。
+### OAuth2 / Advanced
+- `Authorize(scopes)`: ユーザー認可をリクエストします。
+- `Authenticate(token)`: アクセストークンを使用して認証します。
+- `CreateChannelInvite(channelId)`: 招待コードを生成します。
 
-## 注意事項
-- Discord デスクトップクライアントが起動している必要がある。
-- `lib/JSON.ahk` が `DiscordRPC.ahk` と同一ディレクトリに必要です。
-- ボイス制御などの一部の機能は、Discord 側での承認（RPC 連携）が必要な場合があります。
+## テストツール (Example.ahk)
+
+同梱の `Example.ahk` を実行すると、GUI 上で全機能をテストできます。
+`.env` ファイルに `CLIENT_ID` や `CLIENT_SECRET` を記述しておくと、起動時に自動的に読み込まれます。
