@@ -162,7 +162,7 @@ class DiscordRPC {
     GetChannel(channelId) => this.Request("GET_CHANNEL", {channel_id: channelId})
     GetChannels(guildId) => this.Request("GET_CHANNELS", {guild_id: guildId})
     SelectTextChannel(channelId, timeout := 0) => this.Request("SELECT_TEXT_CHANNEL", {channel_id: channelId, timeout: timeout})
-    CreateChannelInvite(channelId, max_age := 86400, max_uses := 0, temporary := false, unique := false) => this.Request("CREATE_CHANNEL_INVITE", {channel_id: channelId, max_age: max_age, max_uses: max_uses, temporary: temporary, unique: unique})
+    CreateChannelInvite(channelId, max_age := 86400, max_uses := 0, temporary := false, unique := false, callback := 0) => this.Request("CREATE_CHANNEL_INVITE", {channel_id: channelId, max_age: max_age, max_uses: max_uses, temporary: temporary, unique: unique}, , callback)
 
     ; --- User & Relationships ---
 
@@ -174,7 +174,7 @@ class DiscordRPC {
     SetCertifiedDevices(devices) => this.Request("SET_CERTIFIED_DEVICES", {devices: devices})
     CaptureShortcut(action) => this.Request("CAPTURE_SHORTCUT", {action: action})
     OverlaySetLocked(locked) => this.Request("OVERLAY_SET_LOCKED", {locked: locked})
-    OpenInviteDialog(channelId) => this.Request("OPEN_INVITE_DIALOG", {channel_id: channelId})
+    OpenInviteDialog(channelId := "") => this.Request("OPEN_INVITE_DIALOG", channelId ? {channel_id: channelId} : {})
     DeepLink(params) => this.Request("DEEP_LINK", params)
     BrowserHandoff() => this.Request("BROWSER_HANDOFF")
     GiftCodeBrowser(code) => this.Request("GIFT_CODE_BROWSER", {code: code})
