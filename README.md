@@ -2,6 +2,8 @@
 
 AutoHotkey (v2.0+) を使用して、外部 DLL に依存せずに Discord Rich Presence を実現する軽量かつ高機能なライブラリです。
 
+![screenshot](./assets/screenshot_1.webp)
+
 ## 特徴
 
 - **純粋な AHK 実装**: 外部の DLL やモジュールを必要とせず、AHK スクリプトのみで動作します。
