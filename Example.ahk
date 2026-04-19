@@ -146,7 +146,9 @@ OnConnect() {
         rpc.user := data.user,
         AppendLog("CONNECTED: " . data.user.username . "#" . data.user.discriminator),
         ToolTip("Discord Connected!"),
-        SetTimer(() => ToolTip(), -2000)
+        SetTimer(() => ToolTip(), -2000),
+        ; トークンがあれば自動認証を実行
+        (token := DotEnv.Get("ACCESS_TOKEN", "")) ? OnAuthenticate(token) : ""
     ))
     
     rpc.On("ERROR", (data) => AppendLog("ERROR: " . (data.HasProp("message") ? data.message : JSON.Stringify(data))))
@@ -165,15 +167,9 @@ OnConnect() {
     }
 
     if (rpc.Connect()) {
-        AppendLog("Connection attempt started...")
-        ; トークンがあれば自動認証
-        savedToken := DotEnv.Get("ACCESS_TOKEN", "")
-        if (savedToken) {
-            AppendLog("Auto-authenticating with saved token...")
-            SetTimer(() => OnAuthenticate(savedToken), -500)
-        }
+        AppendLog("Connection attempt started (Waiting for READY)...")
     } else {
-        AppendLog("Failed to open pipe.")
+        AppendLog("Failed to open pipe. Make sure Discord is running.")
     }
 }
 
