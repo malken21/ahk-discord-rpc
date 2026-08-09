@@ -79,6 +79,11 @@ editToken := mainGui.Add("Edit", "w250 vAccessToken", DotEnv.Get("ACCESS_TOKEN",
 btnAuthenticate := mainGui.Add("Button", "x+10 yp-2 w100", "Authenticate")
 btnAuthenticate.OnEvent("Click", (*) => OnAuthenticate())
 
+mainGui.Add("Text", "xs y+10", "Refresh Token:")
+editRefreshToken := mainGui.Add("Edit", "w250 vRefreshToken", DotEnv.Get("REFRESH_TOKEN", ""))
+btnRefreshToken := mainGui.Add("Button", "x+10 yp-2 w100", "Refresh Token")
+btnRefreshToken.OnEvent("Click", (*) => OnRefreshToken())
+
 mainGui.Add("Text", "xs y+10", "Invite & Utility Test:")
 mainGui.Add("Text", "xs y+5", "Channel ID (Optional for Dialog):")
 editTestChannelId := mainGui.Add("Edit", "w250 vTestChannelId", "")
@@ -147,11 +152,17 @@ OnConnect() {
         AppendLog("CONNECTED: " . data.user.username . "#" . data.user.discriminator),
         ToolTip("Discord Connected!"),
         SetTimer(() => ToolTip(), -2000),
-        ; トークンがあれば自動認証を実行
-        (token := DotEnv.Get("ACCESS_TOKEN", "")) ? OnAuthenticate(token) : ""
+        ; トークンがあれば自動認証（なければリフレッシュ試行）を実行
+        (token := DotEnv.Get("ACCESS_TOKEN", "")) ? OnAuthenticate(token) : (
+            (refreshToken := DotEnv.Get("REFRESH_TOKEN", "")) ? OnRefreshToken(refreshToken) : ""
+        )
     ))
     
-    rpc.On("ERROR", (data) => AppendLog("ERROR: " . (data.HasProp("message") ? data.message : JSON.Stringify(data))))
+    rpc.On("ERROR", (data) => (
+        AppendLog("ERROR: " . (data.HasProp("message") ? data.message : JSON.Stringify(data))),
+        ; code 4009 (Invalid Token) の場合はリフレッシュを試行
+        (data.HasProp("code") && data.code == 4009 && DotEnv.Get("REFRESH_TOKEN", "")) ? SetTimer(() => OnRefreshToken(), -1) : ""
+    ))
     rpc.On("DISCONNECTED", (msg) => AppendLog("DISCONNECTED: " . msg))
     
     ; 汎用レスポンスリスナー（全コマンドの結果をログに表示）
@@ -228,9 +239,50 @@ OnExchangeCode(code) {
     if (res.HasProp("access_token")) {
         AppendLog("Token obtained successfully.")
         editToken.Value := res.access_token
+        DotEnv.Write("ACCESS_TOKEN", res.access_token)
+        if (res.HasProp("refresh_token")) {
+            editRefreshToken.Value := res.refresh_token
+            DotEnv.Write("REFRESH_TOKEN", res.refresh_token)
+        }
         OnAuthenticate(res.access_token)
     } else {
         AppendLog("Token exchange failed: " . JSON.Stringify(res))
+    }
+}
+
+OnRefreshToken(refreshToken := "") {
+    if (!EnsureRPC()) {
+        return
+    }
+    formData := mainGui.Submit(false)
+    if (!refreshToken) {
+        refreshToken := formData.RefreshToken
+    }
+    if (!refreshToken) {
+        refreshToken := DotEnv.Get("REFRESH_TOKEN", "")
+    }
+    if (!refreshToken) {
+        AppendLog("No refresh token provided.")
+        return
+    }
+    if (!formData.ClientSecret) {
+        AppendLog("Client Secret is required to refresh token.")
+        return
+    }
+
+    AppendLog("Refreshing token...")
+    res := rpc.RefreshToken(refreshToken, formData.ClientSecret)
+    if (res.HasProp("access_token")) {
+        AppendLog("Token refreshed successfully.")
+        editToken.Value := res.access_token
+        DotEnv.Write("ACCESS_TOKEN", res.access_token)
+        if (res.HasProp("refresh_token")) {
+            editRefreshToken.Value := res.refresh_token
+            DotEnv.Write("REFRESH_TOKEN", res.refresh_token)
+        }
+        OnAuthenticate(res.access_token)
+    } else {
+        AppendLog("Token refresh failed: " . JSON.Stringify(res))
     }
 }
 
